@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bingo Multiplayer</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            background-color: #f6ace8; /* Màu vàng nhạt, dễ chịu */
+        }
+        .chat-container {
+            background-color: #e0f7fa; /* Màu xanh nhạt cho chat container */
+        }
+        .chat-header {
+            background-color: #b2ebf2; /* Màu xanh nhạt hơn cho header chat */
+        }
+        .rooms-section {
+            background-color: #e0f7fa; /* Màu xanh nhạt cho phần rooms */
+        }
+        #username-screen {
+            background-color: #f0f4c3; /* Màu vàng nhạt cho màn hình nhập tên */
+        }
+        #room-selection {
+            background-color: #f0f4c3; /* Màu vàng nhạt cho màn hình chọn phòng */
+        }
+        #game-container {
+            background-color: #f0f4c3; /* Màu vàng nhạt cho container game */
+        }
+        .modal-content {
+             background-color: #fff;
+        }
+    </style>
+</head>
+<div id="chat-container" class="chat-container">
+    <div class="chat-header">
+        <h3>🗨️ Chat công khai & Danh sách phòng</h3>
+    </div>
+    <div class="chat-content">
+        <div class="chat-messages">
+            <ul id="messages-list"></ul>
+        </div>
+        <div class="chat-input">
+            <input type="text" id="message-input" placeholder="Nhập tin nhắn...">
+            <button id="send-message-btn">Gửi</button>
+        </div>
+    </div>
+    <div class="rooms-section">
+        <h4>Phòng đang chờ</h4>
+        <ul id="active-rooms-list">
+            <li class="no-rooms">Không có phòng nào đang hoạt động</li>
+        </ul>
+    </div>
+</div>
+
+<!-- Winner Modal - Add this before closing body tag -->
+<div id="winner-modal" class="modal">
+    <div class="modal-content">
+        <span id="close-modal-btn" class="close-btn">&times;</span>
+        <div class="winner-container">
+            <div class="winner-animation">
+                <h2>BINGO!</h2>
+                <div class="confetti"></div>
+            </div>
+            <p id="winner-message">Chúc mừng! Bạn đã chiến thắng!</p>
+            <img src="/winner.gif" alt="Winner celebration" class="winner-gif">
+        </div>
+    </div>
+</div>
+<body>
+    <!-- Username Input Screen -->
+    <div id="username-screen" class="center-screen">
+        <h1>🎮 Nhập tên của bạn</h1>
+        <input type="text" id="usernameInput" placeholder="Tên của bạn...">
+        <button id="usernameSubmitBtn">Tiếp tục</button>
+    </div>
+
+    <!-- Room Selection Screen -->
+    <div id="room-selection" class="center-screen" style="display: none;">
+        <h1>🎯 Chào mừng đến Bingo!</h1>
+        <p id="welcome-message"></p>
+        <button id="createRoomBtn">Tạo Phòng</button>
+        <br><br>
+        <input type="text" id="roomInput" placeholder="Nhập mã phòng...">
+        <button id="joinRoomBtn">Tham Gia Phòng</button>
+        <div id="roomStatus"></div>
+        
+        <!-- Room Code Display -->
+        <div id="room-code-display" style="display: none;">
+            <h3>Mã phòng của bạn:</h3>
+            <div id="room-code" class="room-code"></div>
+            <p>Chia sẻ mã này với bạn bè để họ tham gia!</p>
+        </div>
+    </div>
+
+    <!-- Game Container -->
+    <div id="game-container" style="display: none;">
+        <div class="game-header">
+            <h2 id="roomInfo"></h2>
+            <p id="playersInfo"></p>
+        </div>
+        <div id="turn-display"></div>
+        <div id="bingo-board"></div>
+        <div class="game-controls">
+            <button id="playAgainBtn" style="display: none;">Chơi lại</button>
+            <button id="leaveRoomBtn">Thoát phòng</button>
+        </div>
+    </div>
+
+    <div id="lines-completed">Đường hoàn thành: 0/5</div>
+
+    <div id="coin-container">
+        <div id="coin">
+            <div id="heads" class="coin-side">Hình</div>
+            <div id="tails" class="coin-side">Chữ</div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
