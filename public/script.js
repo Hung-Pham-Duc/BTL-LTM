@@ -1,26 +1,34 @@
 const socket = io();
 
-// --- DOM Elements ---
-const usernameScreen = document.getElementById('username-screen'); // Màn hình nhập tên người dùng
-const usernameInput = document.getElementById('usernameInput'); // Input để người dùng nhập tên
-const usernameSubmitBtn = document.getElementById('usernameSubmitBtn'); // Nút gửi tên người dùng
-const welcomeMessage = document.getElementById('welcome-message'); // Lời chào sau khi nhập tên
-const roomSelectionDiv = document.getElementById('room-selection'); // Khu vực chọn hoặc tạo phòng
-const createRoomBtn = document.getElementById('createRoomBtn'); // Nút tạo phòng mới
-const joinRoomBtn = document.getElementById('joinRoomBtn'); // Nút tham gia phòng đã có
-const roomInput = document.getElementById('roomInput'); // Input để nhập mã phòng muốn tham gia
-const roomStatus = document.getElementById('roomStatus'); // Hiển thị trạng thái phòng (đang tạo, chờ...)
-const roomCodeDisplay = document.getElementById('room-code-display'); // Khu vực hiển thị mã phòng
-const roomCodeElement = document.getElementById('room-code'); // Phần tử hiển thị mã phòng
-const gameContainer = document.getElementById('game-container'); // Khu vực chứa giao diện trò chơi Bingo
-const roomInfo = document.getElementById('roomInfo'); // Hiển thị thông tin phòng trong trò chơi
-const playersInfo = document.getElementById('playersInfo'); // Hiển thị thông tin người chơi trong phòng
-const bingoBoard = document.getElementById('bingo-board'); // Bảng Bingo
-const playAgainBtn = document.getElementById('playAgainBtn'); // Nút chơi lại sau khi kết thúc ván
-const leaveRoomBtn = document.getElementById('leaveRoomBtn'); // Nút rời phòng
-const turnDisplay = document.getElementById('turn-display'); // Hiển thị lượt của người chơi
+// DOM Elements
+const usernameScreen = document.getElementById('username-screen');
+const usernameInput = document.getElementById('usernameInput');
+const usernameSubmitBtn = document.getElementById('usernameSubmitBtn');
+const welcomeMessage = document.getElementById('welcome-message');
+const roomSelectionDiv = document.getElementById('room-selection');
+const createRoomBtn = document.getElementById('createRoomBtn');
+const joinRoomBtn = document.getElementById('joinRoomBtn');
+const roomInput = document.getElementById('roomInput');
+const roomStatus = document.getElementById('roomStatus');
+const roomCodeDisplay = document.getElementById('room-code-display');
+const roomCodeElement = document.getElementById('room-code');
+const gameContainer = document.getElementById('game-container');
+const roomInfo = document.getElementById('roomInfo');
+const playersInfo = document.getElementById('playersInfo');
+const bingoBoard = document.getElementById('bingo-board');
+const playAgainBtn = document.getElementById('playAgainBtn');
+const leaveRoomBtn = document.getElementById('leaveRoomBtn');
+const turnDisplay = document.getElementById('turn-display');
+const chatContainer = document.getElementById('chat-container');
+const messagesList = document.getElementById('messages-list');
+const messageInput = document.getElementById('message-input');
+const sendMessageBtn = document.getElementById('send-message-btn');
+const activeRoomsList = document.getElementById('active-rooms-list');
+const winnerModal = document.getElementById('winner-modal');
+const winnerMessage = document.getElementById('winner-message');
+const closeModalBtn = document.getElementById('close-modal-btn');
 
-// --- Game state variables ---
+// Game state variables
 let username = '';
 let currentRoomId = '';
 let myTurn = false;
@@ -29,7 +37,7 @@ let myBoardNumbers = [];
 let gameActive = false;
 let opponents = {};
 
-// --- Username submission ---
+// Username submission
 usernameSubmitBtn.addEventListener('click', () => {
     username = usernameInput.value.trim();
     if (username) {
@@ -41,7 +49,7 @@ usernameSubmitBtn.addEventListener('click', () => {
     }
 });
 
-// --- Room creation ---
+// Room creation 
 createRoomBtn.addEventListener('click', () => {
     if (!username) return;
     socket.emit('createRoom', username);
@@ -76,7 +84,8 @@ leaveRoomBtn.addEventListener('click', () => {
     roomCodeDisplay.style.display = 'none';
 });
 
-// Socket events 
+// Socket events:
+
 socket.on('roomCreated', (data) => {
     const { roomId, username } = data;
     currentRoomId = roomId;
@@ -104,6 +113,8 @@ socket.on('joinedRoom', (data) => {
     // Tạo bảng số mới và gửi lên server
     myBoardNumbers = generateBingoNumbers();
     socket.emit('boardNumbers', { roomId, numbers: myBoardNumbers, username });
+
+    checkAndEnablePlayAgainButton(); 
 });
 
 socket.on('playerJoined', (data) => {
@@ -113,7 +124,7 @@ socket.on('playerJoined', (data) => {
 });
 
 socket.on('startGame', (data) => {
-    const { roomId, players, firstPlayerId } = data; // Nhận firstPlayerId
+    const { roomId, players, firstPlayerId } = data;
     gameActive = true;
 
     roomSelectionDiv.style.display = 'none';
@@ -130,14 +141,17 @@ socket.on('startGame', (data) => {
             opponents[player.id] = player.username;
         }
     });
+
     playersInfo.innerHTML = playersList;
 
     // Determine if it's my turn
-    myTurn = firstPlayerId === socket.id; // Sử dụng firstPlayerId
+    myTurn = firstPlayerId === socket.id;
 
     // Initialize the Bingo board
     initializeBingoBoard();
     updateTurnDisplay();
+
+    checkAndEnablePlayAgainButton(); 
 });
 
 socket.on('numberMarked', (data) => {
@@ -168,19 +182,25 @@ socket.on('gameWon', (data) => {
     const { winner } = data;
     gameActive = false;
 
+    // Thông báo người chiến thắng (alert và modal)
     if (winner === socket.id) {
-        alert('Chúc mừng! Bạn đã chiến thắng! BINGO!');
+        alert('Chúc mừng! Bạn đã chiến thắng! BINGO!'); 
+        winnerMessage.innerText = 'Chúc mừng! Bạn đã chiến thắng! BINGO!'; 
     } else {
-        alert(`${opponents[winner] || 'Đối thủ'} đã chiến thắng!`);
+        alert(`${opponents[winner] || 'Đối thủ'} đã chiến thắng!`); 
+        winnerMessage.innerText = `${opponents[winner] || 'Đối thủ'} đã chiến thắng!`; 
     }
 
-    // Disable board interaction
+    // Hiển thị modal
+    winnerModal.style.display = 'flex';
+
+    // Vô hiệu hóa tương tác với bảng
     const cells = document.querySelectorAll('.bingo-cell');
     cells.forEach(cell => {
         cell.style.pointerEvents = 'none';
     });
 
-    // Show play again button
+    // Hiển thị nút "Chơi lại"
     playAgainBtn.style.display = 'block';
     updateTurnDisplay('Trò chơi đã kết thúc');
 });
@@ -188,6 +208,7 @@ socket.on('gameWon', (data) => {
 socket.on('gameRestart', () => {
     gameActive = true;
     playAgainBtn.style.display = 'none';
+    playAgainBtn.disabled = false; 
 
     // Ẩn bàn Bingo và hiện màn hình tung đồng xu
     gameContainer.style.display = 'none';
@@ -207,20 +228,21 @@ socket.on('gameRestart', () => {
     // Initialize new board
     initializeBingoBoard();
     updateTurnDisplay();
-}); 
 
-socket.on('playerLeft', (playerId) => {
-    if (gameActive) {
-        alert(`${opponents[playerId] || 'Đối thủ'} đã rời phòng.`);
-        gameActive = false;
-        const cells = document.querySelectorAll('.bingo-cell');
-        cells.forEach(cell => {
-            cell.style.pointerEvents = 'none';
-        });
-        updateTurnDisplay('Đối thủ đã rời phòng');
-        playAgainBtn.style.display = 'none'; // Ẩn nút "Chơi lại"
-    }
+    checkAndEnablePlayAgainButton(); 
+});
 
+socket.on('playerLeft', (data) => {
+    const { playerId, message } = data;
+    alert(message);
+    gameActive = false;
+    const cells = document.querySelectorAll('.bingo-cell');
+    cells.forEach(cell => {
+        cell.style.pointerEvents = 'none';
+    });
+    updateTurnDisplay('Đối thủ đã rời phòng');
+    playAgainBtn.style.display = 'none'; // Ẩn nút "Chơi lại"
+    playAgainBtn.disabled = true; // VÔ HIỆU HÓA nút "Chơi lại"
     delete opponents[playerId];
 });
 
@@ -228,7 +250,16 @@ socket.on('errorMessage', (msg) => {
     alert(msg);
 });
 
-// --- Helper functions ---
+function checkAndEnablePlayAgainButton() {
+    if (Object.keys(opponents).length >= 1) { // Kiểm tra có đủ người chơi
+        playAgainBtn.disabled = false;
+    } else {
+        playAgainBtn.disabled = true;
+    }
+}
+
+// Helper functions :
+// Khởi tạo bảng Bingo
 function initializeBingoBoard() {
     bingoBoard.innerHTML = ''; // Xóa bảng cũ
 
@@ -270,12 +301,14 @@ function initializeBingoBoard() {
     }
 }
 
+// Tạo dãy số Bingo ngẫu nhiên
 function generateBingoNumbers() {
     const nums = Array.from({ length: 25 }, (_, i) => i + 1);
     shuffle(nums);
     return nums;
 }
 
+// Trộn mảng
 function shuffle(array) {
     for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -379,17 +412,46 @@ function resetGameState() {
     gameActive = false;
     opponents = {};
 }
-// Add this to the top of script.js where other DOM elements are defined
-const chatContainer = document.getElementById('chat-container');
-const messagesList = document.getElementById('messages-list');
-const messageInput = document.getElementById('message-input');
-const sendMessageBtn = document.getElementById('send-message-btn');
-const activeRoomsList = document.getElementById('active-rooms-list');
-const winnerModal = document.getElementById('winner-modal');
-const winnerMessage = document.getElementById('winner-message');
-const closeModalBtn = document.getElementById('close-modal-btn');
 
-// --- Socket events for public chat and room listing ---
+// Close modal when close button is clicked
+closeModalBtn.addEventListener('click', () => {
+    winnerModal.style.display = 'none';
+});
+
+// Chat functions:
+// Gửi tin nhắn chat
+function sendMessage() {
+    const message = messageInput.value.trim();
+    if (message && username) {
+        socket.emit('sendMessage', { message, sender: username, room: currentRoomId || 'lobby' });
+        messageInput.value = '';
+    }
+}
+
+// Hiển thị tin nhắn
+function addMessageToChat(sender, message, type = 'user') {
+    const messageItem = document.createElement('li');
+    messageItem.classList.add('message-item');
+
+    if (type === 'system') {
+        messageItem.classList.add('system-message');
+        messageItem.innerText = message;
+    } else {
+        messageItem.innerHTML = `<strong>${sender}:</strong> ${message}`;
+    }
+    messagesList.appendChild(messageItem);
+    messagesList.scrollTop = messagesList.scrollHeight; 
+}
+
+// Gửi tin nhắn
+sendMessageBtn.addEventListener('click',sendMessage);
+messageInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        sendMessage();
+    }
+});
+
+// Socket events for public chat and room listing:
 socket.on('updateRooms', (rooms) => {
     activeRoomsList.innerHTML = '';
 
@@ -432,70 +494,6 @@ socket.on('chatMessage', (data) => {
     addMessageToChat(sender, message, type);
 });
 
-// --- Game won event updated ---
-socket.on('gameWon', (data) => {
-    const { winner } = data;
-    gameActive = false;
-
-    // Disable board interaction
-    const cells = document.querySelectorAll('.bingo-cell');
-    cells.forEach(cell => {
-        cell.style.pointerEvents = 'none';
-    });
-
-    // Show the winner modal
-    winnerModal.style.display = 'flex';
-    if (winner === socket.id) {
-        winnerMessage.innerText = 'Chúc mừng! Bạn đã chiến thắng! BINGO!';
-        // Play winner sound if needed
-        // const winSound = new Audio('winner.mp3');
-        // winSound.play();
-    } else {
-        winnerMessage.innerText = `${opponents[winner] || 'Đối thủ'} đã chiến thắng!`;
-    }
-
-    // Show play again button
-    playAgainBtn.style.display = 'block';
-    updateTurnDisplay('Trò chơi đã kết thúc');
-});
-
-// Close modal when close button is clicked
-closeModalBtn.addEventListener('click', () => {
-    winnerModal.style.display = 'none';
-});
-
-// --- Helper functions for chat ---
-function sendMessage() {
-    const message = messageInput.value.trim();
-    if (message && username) {
-        socket.emit('sendMessage', { message, sender: username, room: currentRoomId || 'lobby' });
-        messageInput.value = '';
-    }
-}
-
-function addMessageToChat(sender, message, type = 'user') {
-    const messageItem = document.createElement('li');
-    messageItem.classList.add('message-item');
-
-    if (type === 'system') {
-        messageItem.classList.add('system-message');
-        messageItem.innerText = message;
-    } else {
-        messageItem.innerHTML = `<strong>${sender}:</strong> ${message}`;
-    }
-    messagesList.appendChild(messageItem);
-    messagesList.scrollTop = messagesList.scrollHeight; // Scroll to bottom
-}
-
-// Event listeners for chat
-sendMessageBtn.addEventListener('click',sendMessage);
-messageInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        sendMessage();
-    }
-});
-
-// Initialize chat at startup
 socket.on('connect', () => {
     addMessageToChat('Hệ thống', 'Chào mừng đến với Bingo Multiplayer!', 'system');
     socket.emit('requestRooms'); // Request current rooms
@@ -511,7 +509,7 @@ socket.on('allChatMessages', (messages) => {
 // Thêm phần tử đồng xu
 const coinTossDiv = document.createElement('div');
 coinTossDiv.id = 'coin-toss';
-coinTossDiv.style.display = 'none'; // Ẩn ban đầu
+coinTossDiv.style.display = 'none'; 
 coinTossDiv.innerHTML = `
     <div class="coin-toss-container">
         <h2>Chọn mặt đồng xu</h2>
@@ -529,8 +527,8 @@ gameContainer.parentNode.insertBefore(coinTossDiv, gameContainer);
 const chooseHeadsButton = document.getElementById('choose-heads');
 const chooseTailsButton = document.getElementById('choose-tails');
 const coinTossMessage = document.getElementById('coin-toss-message');
-const coinContainer = document.getElementById('coin-container'); // Lấy container
-let coinChoiceMade = false; // Thêm biến để theo dõi đã chọn chưa
+const coinContainer = document.getElementById('coin-container');
+let coinChoiceMade = false;
 
 // Bắt đầu tung đồng xu
 socket.on('startCoinToss', () => {
@@ -558,10 +556,10 @@ socket.on('coinTossResult', (data) => {
         coinElement.classList.remove('animate-coin'); // Xóa class animation
 
         // Thiết lập hướng xoay cuối cùng cho đồng xu
-        if (result === 'chữ') { // Nếu kết quả là "chữ"
+        if (result === 'chữ') { 
             coinElement.style.transform = 'rotateY(180deg)';
-        } else { // Nếu kết quả là "hình"
-            coinElement.style.transform = 'rotateY(0deg)'; // Hoặc có thể là 'rotateY(360deg)' hoặc ''
+        } else { 
+            coinElement.style.transform = 'rotateY(0deg)'; 
         }
 
         // Cập nhật thông báo kết quả
@@ -590,34 +588,34 @@ socket.on('coinTossResult', (data) => {
             coinTossMessage.innerText = message;
         }
 
-
-        // Chờ một chút rồi chuyển về màn hình game
+        // Chờ một lúc rồi chuyển về màn hình game
         setTimeout(() => {
             if(coinTossDiv) coinTossDiv.style.display = 'none';
             if(gameContainer) gameContainer.style.display = 'block';
             updateTurnDisplay();
-            // Tùy chọn: Reset transform của đồng xu để chuẩn bị cho lần tung tiếp theo (nếu cần)
+            
             // coinElement.style.transform = '';
-        }, 3000); // Thời gian hiển thị kết quả trước khi về game
+        }, 3000); 
 
-    }, 3000); // Thời gian này nên khớp với thời gian của animation 'spinCoin'
+    }, 3000); 
 });
 
-// Xử lý khi mặt đồng xu không khả dụng (sửa đổi)
+// Mặt đồng xu không khả dụng
 socket.on('coinSideUnavailable', (availableSide) => {
     coinTossMessage.innerText = `Mặt này đã được chọn. Bạn phải chọn "${availableSide}".`;
     if (availableSide === 'hình') {
         chooseHeadsButton.disabled = false;
         chooseTailsButton.disabled = true;
-    } else if (availableSide === 'chữ') { // Đổi else thành else if
+    } else if (availableSide === 'chữ') { 
         chooseHeadsButton.disabled = true;
         chooseTailsButton.disabled = false;
     }
 });
+
 // Xử lý khi mặt đồng xu bị ép thay đổi
 socket.on('forceCoinSide', (forcedSide) => {
     coinTossMessage.innerText = `Đối thủ đã chọn mặt này. Bạn bị ép chọn "${forcedSide}".`;
-    // Thêm animation xoay đồng xu (tương tự như trong 'coinTossResult')
+    // Animation xoay đồng xu 
     const coin = document.getElementById('coin');
     coin.classList.add('animate-coin');
 
@@ -633,6 +631,7 @@ socket.on('forceCoinSide', (forcedSide) => {
 
     }, 3000);
 });
+
 // Chọn "Hình"
 chooseHeadsButton.addEventListener('click', () => {
     if (!coinChoiceMade) {

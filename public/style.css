@@ -413,19 +413,17 @@ input[type="text"] {
 }
 
 #coin-container {
-    position: relative;
-    width: 100px;
-    height: 100px;
-    margin: 20px auto;
-    perspective: 300px; /* Quan trọng cho hiệu ứng 3D */
+    display: flex;
+    justify-content: center;
+    margin-top: 20px;
 }
 
 #coin {
-    width: 100%;
-    height: 100%;
-    position: absolute;
-    transform-style: preserve-3d; /* Giữ hiệu ứng 3D cho con */
-    transition: transform 1s ease-in-out;
+    width: 150px;
+    height: 150px;
+    position: relative;
+    perspective: 1000px;
+    transform-style: preserve-3d;
 }
 
 .coin-side {
@@ -433,24 +431,22 @@ input[type="text"] {
     height: 100%;
     border-radius: 50%;
     position: absolute;
-    backface-visibility: hidden; /* Ẩn mặt sau */
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 2em;
-    box-shadow: 0 0 10px rgba(0,0,0,0.3);
-    border: 2px solid #333;
+    top: 0;
+    left: 0;
+    backface-visibility: hidden;
+    object-fit: cover;
+    background-size: cover;
+    background-position: center;
 }
 
 #heads {
-    background: linear-gradient(45deg, #ffd700, #ffcc00);
-    color: #000;
+    background-image: url('image/mat_hinh.jpg'); 
+    transform: rotateY(0deg);
 }
 
 #tails {
-    background: linear-gradient(45deg, #c0c0c0, #a9a9a9);
-    color: #333;
-    transform: rotateY(180deg); /* Xoay mặt chữ */
+    background-image: url('image/mat_chu.jpg'); 
+    transform: rotateY(180deg);
 }
 
 /* Animation */

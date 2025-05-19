@@ -1,27 +1,31 @@
-// const socket = io("ws://localhost:8000");
 const socket = io.connect();
+
+// Biến và DOM 
 var username;
-var turn = 0
-var lastMove
-var one = document.getElementById("one") // sound for cell complete
-var two = document.getElementById("two") // sound for new user connected
-var yt = document.getElementById("yt") // sound for your turn
-var wina = document.getElementById("wina") // sound for winner abhi
-var wins = document.getElementById("wins") // sound for winner abhi
+var turn = 0;
+var lastMove;
+// Các phần tử âm thanh
+var one = document.getElementById("one");
+var two = document.getElementById("two");
+var yt = document.getElementById("yt");
+var wina = document.getElementById("wina");
+var wins = document.getElementById("wins");
 
+display = document.getElementById("display");
 
-// chuyển văn bản thành giọng nói
+// Chuyển văn bản thành giọng nói
 let synth = speechSynthesis;
-voiceSelected = "Google हिन्दी" ;
-function textToSpeech(text){
+voiceSelected = "Google हिन्दी";
+
+// Hàm chuyển văn bản thành giọng nói
+function textToSpeech(text) {
     let utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = voiceSelected;  
-    synth.speak(utterance);    
+    synth.speak(utterance); 
 }
 
-// hàm vô hiệu hóa người dùng
+// Vô hiệu hóa/kích hoạt các ô trên bảng
 function Access(controller) {
-
     if (controller == 0) {
         for (x = 0; x < 5; x++) {
             for (y = 0; y < 5; y++) {
@@ -36,102 +40,73 @@ function Access(controller) {
             }
         }
     }
-
 }
 
+// Xử lý tên người dùng
 do {
     username = prompt('Enter your name :');
 } while (!username)
 
 if (username) {
-
-    textToSpeech(`${username}, welcome to awesome bingo game coded by Abhishek`)
+    // Xử lý khi có tên người dùng
+    textToSpeech(`${username}, welcome to awesome bingo game coded by Abhishek`);
     socket.emit('user-data', (username));
     Access(1);
 }
 
-display = document.getElementById("display")
+// Xử lý tin nhắn
+function giveMessage(username, status) {
+    var newp = document.createElement('p')
+    newp.classList.add('players')
+    
+    if (status == 'connect') {
+        newp.innerHTML = `${username} joined the server....`;
 
-// hiển thị tên người dùng
-socket.on('user-data', (username) => {
-    two.play()
-    giveMessage(username, 'connect');
-
-
-})
-
-// if someone wins :
-var block = false ;
-socket.on('winner',(player)=>
-{
-    Access(0) ;
-    
-    console.log(player + " wins");
-
-    giveMessage(player,'winner')
-        
-
-      
-})
-
-if(!block)
-{
-    function giveMessage(username, status) {
-        var newp = document.createElement('p')
-        newp.classList.add('players')
-    
-    
-        if (status == 'connect') {
-            newp.innerHTML = `${username} joined the server....`;
-    
-    
-        }
-    
-        else if(status == 'winner')
-        {
-            document.querySelector('#turn').innerHTML = `${username} wins ...` ;
-            block = true ;
-            
-        }
-        
-     
-        
-        else if(status == 'turnY')
-        {
-            document.querySelector('#turn').innerHTML = `Your turn (Last Move: ${lastMove})` ;
-            // yt.play();
-            textToSpeech(` ${username} it's your turn`);
-        }
-    
-        else if(status == 'turn')
-        {
-            document.querySelector('#turn').innerHTML = `Opponent's turn` ;
-
-        }
-        else {
-            newp.innerHTML = `${username} got disconnected ....`;
-        }
-        console.log(username + "joined!!!!");
-    
-    
-        display.appendChild(newp);
     }
     
+    else if(status == 'winner')
+    {
+        document.querySelector('#turn').innerHTML = `${username} wins ...` ;
+        block = true ;
+            
+    }
+        
+    else if(status == 'turnY')
+    {
+        document.querySelector('#turn').innerHTML = `Your turn (Last Move: ${lastMove})` ;
+        // yt.play();
+        textToSpeech(` ${username} it's your turn`);
+    }
+    
+    else if(status == 'turn')
+    {
+        document.querySelector('#turn').innerHTML = `Opponent's turn` ;
+
+    }
+    else {
+        newp.innerHTML = `${username} got disconnected ....`;
+    }
+        
+    console.log(username + "joined!!!!");
+    
+    display.appendChild(newp);
 }
 
-
+// Xử lý game
 const Numbers = new Array();
 const Seq = new Array();
-const Rows = new Array(5) // checks which row is completed
-const Cols = new Array(5) // checks which column is completed
-const diag = []
+const Rows = new Array(5); // checks which row is completed
+const Cols = new Array(5); // checks which column is completed
+const diag = [];
 var Completer = 0;
 
+var block = false; // Ngăn chặn tương tác sau khi có người thắng
 
 for (x = 1; x <= 25; x++) {
     Numbers.push(x);
 }
 
+// Tạo dãy số ngẫu nhiên
 function getSequence() {
     var i = Numbers.length ;
     while (Numbers.length) {
@@ -147,11 +122,13 @@ function getSequence() {
 
     }
 }
-// tạo dãy số
+
+// Tạo dãy số
 getSequence();
 
 const cells = new Array(5);
 
+// Điền số vào các ô trên bảng
 function fillCells() {
     var index = 0;
     for (x = 0; x < 5; x++) {
@@ -169,70 +146,10 @@ function fillCells() {
     // console.log(cells);
 }
 
-// điền tất cả các ô với số nguyên ngẫu nhiên từ 1 tới 25
+// Điền tất cả các ô với số nguyên ngẫu nhiên từ 1 tới 25
 fillCells()
 
-// console.log(cells);
-
-
-// decide it's your turn or not :
-if(!block)
-{
-    socket.on('turn',(user)=>{
-        if(user == username)
-        {
-            giveMessage(username,'turnY')
-            console.log("your turn");
-    
-            Access(1) ;
-            
-        }
-        else
-        {
-            giveMessage(username,'turn')
-            console.log("someone's turn");
-            Access(0) ;
-        }
-    })
-}
-
-// chọn ô từ dữ liệu được gửi bởi người dùng khác
-socket.on('cell-data', (value) => {
-
-    console.log("I received" + value);
-    lastMove = value
-
-      // send turns data to everyone :
-     if(!block)
-     {
-        turn++ ;
-        socket.emit('turn',turn) ;
-     }
-   
-    for (x = 0; x < 5; x++) {
-        for (y = 0; y < 5; y++) {
-            if (cells[x][y] == value) {
-
-                value = (x.toString() + y.toString())
-                // change color of cell :
-                var s = document.getElementById("a" + value)
-                s.style.backgroundColor = "rgb(215, 95, 61)";
-                s.style.textDecoration = "line-through"
-             
-
-                cells[parseInt(value[0])][parseInt(value[1])] = 0;
-
-                // gọi hàm pfMatch để ktra trùng lặp
-                perfectMatch();
-                break;
-
-            }
-        }
-    }
-
-})
-
-// hàm gửi dữ liệu ô
+// Gửi dữ liệu ô khi người chơi chọn
 function giveCellData(value) {
     value = value.toString();
 
@@ -243,7 +160,6 @@ function giveCellData(value) {
        socket.emit('turn',turn) ;
     }
 
-
     if (value.length == 1) {
         value = "0" + value;
     }
@@ -251,32 +167,29 @@ function giveCellData(value) {
     if(cells[parseInt(value[0])][parseInt(value[1])] !=0)
     {
         // change color of cell :
-    console.log(value);
-    var s = document.getElementById("a" + value)
-    s.style.backgroundColor = "rgb(215, 95, 61)";
-    s.style.textDecoration = "line-through"
-
-    // send this data to all connected users ...
-    // console.log(s.innerText);
-    socket.emit('cell-data', s.innerText);
-
-
-    cells[parseInt(value[0])][parseInt(value[1])] = 0;
-
-    // call perfect Match function for match :
-    perfectMatch();
+        console.log(value);
+        var s = document.getElementById("a" + value)
+        s.style.backgroundColor = "rgb(215, 95, 61)";
+        s.style.textDecoration = "line-through"
+    
+        // send this data to all connected users ...
+        // console.log(s.innerText);
+        socket.emit('cell-data', s.innerText);
+    
+        cells[parseInt(value[0])][parseInt(value[1])] = 0;
+    
+        // call perfect Match function for match :
+        perfectMatch();
     }
     else
     {
         alert("Already selected")
     }
-    
 }
 
+// Kiểm tra các hàng/cột/đường chéo đã hoàn thành
 function perfectMatch() {
     // check if a row is completed :
-
-
     for (x = 0; x < 5; x++) {
         counter = 0;
 
@@ -312,7 +225,6 @@ function perfectMatch() {
         }
     }
 
-
     // check if a diagonal is completed :
     if (diag.length != 2) {
         counter1 = 0, counter2 = 0;
@@ -337,11 +249,9 @@ function perfectMatch() {
             changeColor(2, 'diagoanl')
         }
     }
-
-
 }
 
-// function to change color of row/column
+// Thay đổi màu sắc các ô khi hàng/cột/đường chéo hoàn thành
 function changeColor(c, type) {
     one.play();
 
@@ -366,9 +276,8 @@ function changeColor(c, type) {
          location.href = "https://media.tenor.com/-Yf9G_sGZ-8AAAAC/youre-a-winner-winner.gif" ;
         }, 2000);
         
-
-       
     }
+    
     if (type == 'row') {
         for (x = 0; x < 5; x++) {
             var e = document.getElementById("a" + c.toString() + x.toString());
@@ -393,7 +302,69 @@ function changeColor(c, type) {
                 }
             }
         }
-
     }
-
 }
+
+// Hiển thị tên người dùng
+socket.on('user-data', (username) => {
+    two.play()
+    giveMessage(username, 'connect');
+});
+
+// Khi có người thắng
+socket.on('winner', (player) => {
+    Access(0) ;
+    console.log(player + " wins");
+    giveMessage(player,'winner')
+});
+
+// Xác định lượt chơi
+socket.on('turn', (user) => {
+    if(user == username)
+    {
+        giveMessage(username,'turnY')
+        console.log("your turn");
+        Access(1) ;
+            
+    }
+    else
+    {
+        giveMessage(username,'turn')
+        console.log("someone's turn");
+        Access(0) ;
+    }
+});
+
+// Chọn ô từ dữ liệu được gửi bởi người dùng khác
+socket.on('cell-data', (value) => {
+
+    console.log("I received" + value);
+    lastMove = value
+    
+    // send turns data to everyone :
+    if(!block)
+    {
+        turn++ ;
+        socket.emit('turn',turn) ;
+    }
+   
+    for (x = 0; x < 5; x++) {
+        for (y = 0; y < 5; y++) {
+            if (cells[x][y] == value) {
+
+                value = (x.toString() + y.toString())
+                // change color of cell :
+                var s = document.getElementById("a" + value)
+                s.style.backgroundColor = "rgb(215, 95, 61)";
+                s.style.textDecoration = "line-through"
+             
+                cells[parseInt(value[0])][parseInt(value[1])] = 0;
+
+                // Gọi hàm pfMatch để ktra trùng lặp
+                perfectMatch();
+                break;
+
+            }
+        }
+    }
+});

@@ -32,7 +32,7 @@ let coinToss = {
     firstChooser: null //Socket ID của người chơi chọn mặt đồng xu đầu tiên trong ván hiện tại
 };
 
-// Hàm reset trạng thái của coinToss trong phòng
+// Hàm reset trạng thái tung đồng xu
 function resetCoinToss(roomId) {
     coinToss = {
         roomId: roomId,
@@ -46,8 +46,7 @@ function resetCoinToss(roomId) {
     };
 }
 
-// Quản lý phòng update 
-// Hàm này trả về thông tin của các phòng đang có người chơi
+// Lấy thông tin các phòng đang có người chơi
 function getRoomsInfo() {
     const roomsInfo = {};
     for (const [roomId, room] of Object.entries(rooms)) {  // Duyệt qua từng phòng trong 'rooms'
@@ -61,24 +60,86 @@ function getRoomsInfo() {
     return roomsInfo;
 }
 
-//  Xử lý socket.io 
+// Xử lý rời phòng
+function leaveRoom(socket, roomId) {
+    let shouldUpdateRooms = false;
+
+    if (roomId && rooms[roomId]) {
+        // Get username before removing
+        const player = rooms[roomId].players.find(p => p.id === socket.id);
+        const username = player ? player.username : 'Người chơi';
+
+        // Thông báo cho những người còn lại trong phòng
+        socket.to(roomId).emit('playerLeft', {
+            playerId: socket.id,
+            message: `${username} đã rời phòng.`
+        });
+
+        // Xóa người chơi khỏi phòng
+        if (rooms[roomId].players) {
+            rooms[roomId].players = rooms[roomId].players.filter(player => player.id !== socket.id);
+        }
+
+        // Xóa bảng số của người chơi
+        if (rooms[roomId].boardNumbers && rooms[roomId].boardNumbers[socket.id]) {
+            delete rooms[roomId].boardNumbers[socket.id];
+        }
+
+        // Broadcast system message
+        io.emit('chatMessage', {
+            sender: 'Hệ thống',
+            message: `${username} đã rời khỏi phòng ${roomId}`,
+            type: 'system'
+        });
+
+        shouldUpdateRooms = true;
+
+        // Xóa phòng nếu không còn ai
+        if (rooms[roomId].players.length === 0) {
+            delete rooms[roomId];
+            console.log(`❌ Room ${roomId} deleted (no players remaining)`);
+        }
+
+        // Rời khỏi phòng Socket.IO
+        socket.leave(roomId);
+        delete socket.roomId;
+        
+        console.log(`👋 Player ${socket.id} left room ${roomId}`);
+    }
+
+    return shouldUpdateRooms;
+}
+
+// Kiểm tra và bắt đầu game nếu đủ điều kiện
+function checkGameStart(roomId) {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    // Nếu có 2 người chơi và đủ bảng số
+    if (room.players.length === 2 &&
+        Object.keys(room.boardNumbers).length === 2) {
+
+        // Bắt đầu game
+        room.gameActive = true;
+
+        // Gửi thông tin bắt đầu game cho các người chơi
+        io.to(roomId).emit('startGame', {
+            roomId,
+            players: room.players
+        });
+
+        console.log(`🚀 Game started in room ${roomId}`);
+        io.emit('updateRooms', getRoomsInfo()); // Update room list
+    }
+}
+
+// Xử lý socket.io
 io.on('connection', (socket) => {
     console.log('🔵 Người dùng mới kết nối:', socket.id);
-    connectedUsers++; //Biến đếm số người vào socket.io
-
-    // Nếu đây là người dùng đầu tiên, khởi tạo lại lịch sử chat
-    if (connectedUsers === 1) {
-        chatMessages = [];
-        console.log('✨ Khởi tạo lịch sử chat mới');
-    }
+    connectedUsers++;
 
     // Gửi lịch sử chat (nếu có) cho người dùng mới
     socket.emit('allChatMessages', chatMessages);
-
-    // Update all clients with current rooms
-    socket.on('requestRooms', () => {
-        socket.emit('updateRooms', getRoomsInfo());
-    });
 
     // Xử lý chat
     socket.on('sendMessage', (data) => {
@@ -97,6 +158,11 @@ io.on('connection', (socket) => {
         console.log(`✉️ Message from ${sender}: ${message}`); // In ra console nội dung tin nhắn và người gửi
     });
 
+    // Gửi thông tin phòng khi có yêu cầu
+    socket.on('requestRooms', () => {
+        socket.emit('updateRooms', getRoomsInfo());
+    });
+
     // Tạo phòng
     socket.on('createRoom', (username) => {
         const roomId = Math.random().toString(36).substr(2, 6).toUpperCase(); // Tạo một ID phòng ngẫu nhiên
@@ -105,6 +171,7 @@ io.on('connection', (socket) => {
             boardNumbers: {},
             gameActive: false
         };
+        
         socket.join(roomId);
         socket.roomId = roomId; // Lưu roomId vào socket để dễ truy cập
         socket.emit('roomCreated', { roomId, username });
@@ -162,7 +229,7 @@ io.on('connection', (socket) => {
                     coinToss.roomId = roomId;
                     coinToss.player1 = rooms[roomId].players[0].id;
                     coinToss.player2 = rooms[roomId].players[1].id;
-                    io.to(roomId).emit('startCoinToss'); // Báo cho client bắt đầu tung xu
+                    io.to(roomId).emit('startCoinToss'); // Báo cho script bắt đầu tung xu
                 } else {
                     socket.emit('waitingForOpponent', roomId);
                 }
@@ -180,6 +247,14 @@ io.on('connection', (socket) => {
             }
         } else {
             socket.emit('errorMessage', 'Phòng không tồn tại.');
+        }
+    });
+
+    // Xử lý rời phòng
+    socket.on('leaveRoom', (roomId) => {
+        if (leaveRoom(socket, roomId)) {
+            // Update rooms list for all clients
+            io.emit('updateRooms', getRoomsInfo());
         }
     });
 
@@ -204,7 +279,7 @@ io.on('connection', (socket) => {
                         } else if (socket.id === coinToss.player2) {
                             coinToss.player2Choice = forcedChoice;
                         }
-                        io.to(roomId).emit('forceCoinSide', forcedChoice); // Thông báo cho client
+                        io.to(roomId).emit('forceCoinSide', forcedChoice); // Thông báo cho script
                     } else if (coinToss.player2Choice && choice === coinToss.player2Choice) {
                         // Người chơi 2 chọn trùng, tự động đổi và thông báo
                         const forcedChoice = choice === 'hình' ? 'chữ' : 'hình';
@@ -213,7 +288,7 @@ io.on('connection', (socket) => {
                         } else if (socket.id === coinToss.player2) {
                             coinToss.player2Choice = forcedChoice;
                         }
-                        io.to(roomId).emit('forceCoinSide', forcedChoice); // Thông báo cho client
+                        io.to(roomId).emit('forceCoinSide', forcedChoice); 
                     } else {
                         if (socket.id === coinToss.player1) {
                             coinToss.player1Choice = choice;
@@ -298,7 +373,7 @@ io.on('connection', (socket) => {
             coinToss.roomId = roomId;
             coinToss.player1 = rooms[roomId].players[0].id;
             coinToss.player2 = rooms[roomId].players[1].id;
-            io.to(roomId).emit('startCoinToss'); // Báo cho client bắt đầu tung xu
+            io.to(roomId).emit('startCoinToss'); // Báo cho script bắt đầu tung xu
 
             // Thông báo cho tất cả người chơi trong phòng
             io.to(roomId).emit('gameRestart');
@@ -306,21 +381,10 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Xử lý rời phòng
-    socket.on('leaveRoom', (roomId) => {
-        if (leaveRoom(socket, roomId)) {
-            // Update rooms list for all clients
-            io.emit('updateRooms', getRoomsInfo());
-        }
-    });
-
     // Ngắt kết nối
     socket.on('disconnect', () => {
         console.log('🔴 Người dùng ngắt kết nối:', socket.id);
         connectedUsers--;
-
-        // Không cần xóa chatMessages ở đây. Nó sẽ tự động được giải phóng
-        // khi không còn ai kết nối và biến connectedUsers = 0.
 
         console.log(`👤 Số người dùng còn lại: ${connectedUsers}`);
 
@@ -335,80 +399,7 @@ io.on('connection', (socket) => {
     });
 });
 
-// Modified leaveRoom function to return whether the room list should be updated
-function leaveRoom(socket, roomId) {
-    let shouldUpdateRooms = false;
-
-    if (roomId && rooms[roomId]) {
-        // Get username before removing
-        const player = rooms[roomId].players.find(p => p.id === socket.id);
-        const username = player ? player.username : 'Người chơi';
-
-        // Thông báo cho những người còn lại trong phòng
-        socket.to(roomId).emit('playerLeft', {
-            playerId: socket.id,
-            message: `${username} đã rời phòng.`
-        });
-
-        // Xóa người chơi khỏi phòng
-        if (rooms[roomId].players) {
-            rooms[roomId].players = rooms[roomId].players.filter(player => player.id !== socket.id);
-        }
-
-        // Xóa bảng số của người chơi
-        if (rooms[roomId].boardNumbers && rooms[roomId].boardNumbers[socket.id]) {
-            delete rooms[roomId].boardNumbers[socket.id];
-        }
-
-        // Broadcast system message
-        io.emit('chatMessage', {
-            sender: 'Hệ thống',
-            message: `${username} đã rời khỏi phòng ${roomId}`,
-            type: 'system'
-        });
-
-        shouldUpdateRooms = true;
-
-        // Xóa phòng nếu không còn ai
-        if (rooms[roomId].players.length === 0) {
-            delete rooms[roomId];
-            console.log(`❌ Room ${roomId} deleted (no players remaining)`);
-        }
-
-        // Rời khỏi phòng Socket.IO
-        socket.leave(roomId);
-        delete socket.roomId;
-
-        console.log(`👋 Player ${socket.id} left room ${roomId}`);
-    }
-
-    return shouldUpdateRooms;
-}
-
-// Helper function to check if game should start
-function checkGameStart(roomId) {
-    const room = rooms[roomId];
-    if (!room) return;
-
-    // Nếu có 2 người chơi và đủ bảng số
-    if (room.players.length === 2 &&
-        Object.keys(room.boardNumbers).length === 2) {
-
-        // Bắt đầu game
-        room.gameActive = true;
-
-        // Gửi thông tin bắt đầu game cho các người chơi
-        io.to(roomId).emit('startGame', {
-            roomId,
-            players: room.players
-        });
-
-        console.log(`🚀 Game started in room ${roomId}`);
-        io.emit('updateRooms', getRoomsInfo()); // Update room list
-    }
-}
-
-// --- Khởi động server ---
+// Khởi động server
 http.listen(PORT, () => {
     console.log(`🚀 Server is running at http://localhost:${PORT}`);
 });

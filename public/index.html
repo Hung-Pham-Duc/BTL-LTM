@@ -111,12 +111,19 @@
 
     <div id="coin-container">
         <div id="coin">
-            <div id="heads" class="coin-side">Hình</div>
-            <div id="tails" class="coin-side">Chữ</div>
+            <img id="heads" class="coin-side" src="image/mat_hinh.jpg" alt="Mặt hình">
+            <img id="tails" class="coin-side" src="image/mat_chu.jpg" alt="Mặt chữ">
         </div>
     </div>
 
+    <audio id="one" src="sound/one.wav"></audio>
+    <audio id="two" src="sound/two.wav"></audio>
+    <audio id="yt" src="sound/your_turn.wav"></audio>
+    <audio id="wina" src="sound/wina.wav"></audio>
+    <audio id="wins" src="sound/wins.wav"></audio>
+
     <script src="/socket.io/socket.io.js"></script>
     <script src="script.js"></script>
+    <script src="client.js"></script>
 </body>
 </html>
