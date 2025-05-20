@@ -79,13 +79,16 @@
     <div id="room-selection" class="center-screen" style="display: none;">
         <h1>🎯 Chào mừng đến Bingo!</h1>
         <p id="welcome-message"></p>
+        <div>
+            <label for="maxPlayersInput">Số người chơi (2-5):</label>
+            <input type="number" id="maxPlayersInput" min="2" max="5" value="2">
+        </div>
         <button id="createRoomBtn">Tạo Phòng</button>
         <br><br>
         <input type="text" id="roomInput" placeholder="Nhập mã phòng...">
         <button id="joinRoomBtn">Tham Gia Phòng</button>
         <div id="roomStatus"></div>
-        
-        <!-- Room Code Display -->
+
         <div id="room-code-display" style="display: none;">
             <h3>Mã phòng của bạn:</h3>
             <div id="room-code" class="room-code"></div>
@@ -107,7 +110,7 @@
         </div>
     </div>
 
-    <div id="lines-completed">Đường hoàn thành: 0/5</div>
+    <div id="lines-completed">Đường hoàn thành: 0/2</div>
 
     <div id="coin-container">
         <div id="coin">

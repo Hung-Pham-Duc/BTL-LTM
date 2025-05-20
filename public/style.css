@@ -394,7 +394,7 @@ input[type="text"] {
     display: flex;
     justify-content: center;
     align-items: center;
-    position: fixed; /* Đặt vị trí cố định để luôn ở giữa màn hình */
+    position: fixed; 
     top: 0;
     left: 0;
     width: 100%;

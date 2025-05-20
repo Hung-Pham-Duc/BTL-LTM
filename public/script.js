@@ -27,6 +27,7 @@ const activeRoomsList = document.getElementById('active-rooms-list');
 const winnerModal = document.getElementById('winner-modal');
 const winnerMessage = document.getElementById('winner-message');
 const closeModalBtn = document.getElementById('close-modal-btn');
+const maxPlayersInput = document.getElementById('maxPlayersInput');
 
 // Game state variables
 let username = '';
@@ -52,7 +53,12 @@ usernameSubmitBtn.addEventListener('click', () => {
 // Room creation 
 createRoomBtn.addEventListener('click', () => {
     if (!username) return;
-    socket.emit('createRoom', username);
+    const maxPlayers = parseInt(maxPlayersInput.value); // Lấy giá trị số người chơi
+    if (maxPlayers < 2 || maxPlayers > 5) {
+        alert('Số người chơi phải từ 2 đến 5.');
+        return;
+    }
+    socket.emit('createRoom', { username, maxPlayers }); // Gửi cả username và maxPlayers
 });
 
 // Join room 
@@ -87,16 +93,18 @@ leaveRoomBtn.addEventListener('click', () => {
 // Socket events:
 
 socket.on('roomCreated', (data) => {
-    const { roomId, username } = data;
+    const { roomId, username, maxPlayers } = data; // Nhận maxPlayers từ server
     currentRoomId = roomId;
-    roomStatus.innerText = `Đã tạo phòng thành công!`;
+    roomStatus.innerText = `Đã tạo phòng thành công! Chờ ${maxPlayers - 1} người chơi nữa.`;
     roomCodeElement.innerText = roomId;
     roomCodeDisplay.style.display = 'block';
-    playerNumber = 1;
+    playerNumber = 1; // Người tạo phòng luôn là người chơi số 1 (trong mảng players của phòng)
 
-    // Tạo bảng số ngẫu nhiên và gửi lên server
     myBoardNumbers = generateBingoNumbers();
     socket.emit('boardNumbers', { roomId, numbers: myBoardNumbers, username });
+
+    // Cập nhật thông tin hiển thị số người chơi trong phòng chờ (nếu có)
+    // Ví dụ: activeRoomsList
 });
 
 socket.on('waitingForOpponent', (roomId) => {
@@ -104,78 +112,88 @@ socket.on('waitingForOpponent', (roomId) => {
 });
 
 socket.on('joinedRoom', (data) => {
-    const { roomId, opponent } = data;
+    const { roomId, opponent, playersInRoom, maxPlayers } = data;
     currentRoomId = roomId;
-    roomStatus.innerText = `Đã tham gia phòng: ${roomId}. Đang chờ game bắt đầu...`;
-    opponents[opponent.id] = opponent.username;
-    playerNumber = 2;
+    roomStatus.innerText = `Đã tham gia phòng: <span class="math-inline">\{roomId\}\. \(</span>{playersInRoom}/${maxPlayers} người chơi). Chờ game bắt đầu...`;
+    opponents[opponent.id] = opponent.username; // Giữ lại để tương thích, nhưng bạn có thể quản lý danh sách người chơi đầy đủ hơn
+    playerNumber = playersInRoom; // Số thứ tự của người chơi này trong phòng
 
-    // Tạo bảng số mới và gửi lên server
     myBoardNumbers = generateBingoNumbers();
     socket.emit('boardNumbers', { roomId, numbers: myBoardNumbers, username });
 
-    checkAndEnablePlayAgainButton(); 
+    checkAndEnablePlayAgainButton();
 });
 
 socket.on('playerJoined', (data) => {
-    const { player } = data;
-    opponents[player.id] = player.username;
-    roomStatus.innerText = `${player.username} đã tham gia phòng!`;
+    const { player, playersInRoom, maxPlayers } = data;
+    opponents[player.id] = player.username; // Tương tự như trên
+    roomStatus.innerText = `<span class="math-inline">\{player\.username\} đã tham gia phòng\! \(</span>{playersInRoom}/${maxPlayers} người chơi).`;
+    // Cập nhật danh sách người chơi hiển thị nếu cần
 });
 
 socket.on('startGame', (data) => {
-    const { roomId, players, firstPlayerId } = data;
+    const { roomId, players, firstPlayerId, maxPlayersInRoom } = data; // Nhận maxPlayersInRoom
     gameActive = true;
 
     roomSelectionDiv.style.display = 'none';
     gameContainer.style.display = 'block';
     roomInfo.innerText = `Phòng: ${roomId}`;
 
-    // Update players info
-    let playersList = '';
+    let playersList = 'Người chơi: ';
     players.forEach(player => {
         if (player.id === socket.id) {
-            playersList += `<span class="you">${player.username} (Bạn)</span> `;
+            playersList += `<span class="you">${player.username} (Bạn)</span>, `;
         } else {
-            playersList += `<span class="opponent">${player.username}</span> `;
-            opponents[player.id] = player.username;
+            playersList += `<span class="opponent">${player.username}</span>, `;
+            opponents[player.id] = player.username; // Cập nhật danh sách đối thủ
         }
     });
+    playersInfo.innerHTML = playersList.slice(0, -2); // Xóa dấu phẩy cuối cùng
 
-    playersInfo.innerHTML = playersList;
+    // Xử lý lượt chơi và tung đồng xu
+    if (maxPlayersInRoom === 2) {
+        // Phòng 2 người, tiếp tục dùng logic tung đồng xu (đã có sẵn)
+        // myTurn sẽ được xác định bởi coinTossResult
+        coinTossDiv.style.display = 'block'; // Đảm bảo hiện nếu trước đó bị ẩn
+    } else {
+        // Phòng 3+ người, không tung đồng xu
+        coinTossDiv.style.display = 'none'; // Ẩn giao diện tung đồng xu
+        myTurn = (firstPlayerId === socket.id);
+        updateTurnDisplay(null, players.find(p => p.id === firstPlayerId)?.username);
+    }
 
-    // Determine if it's my turn
-    myTurn = firstPlayerId === socket.id;
-
-    // Initialize the Bingo board
     initializeBingoBoard();
-    updateTurnDisplay();
-
-    checkAndEnablePlayAgainButton(); 
+    // updateTurnDisplay(); // Gọi updateTurnDisplay với tên người chơi nếu là phòng nhiều người
+    checkAndEnablePlayAgainButton();
 });
 
 socket.on('numberMarked', (data) => {
-    const { number, markerId } = data; // Lấy số đã được đánh dấu và ID của người đã đánh dấu
+    const { number, markerId, nextPlayerId, nextPlayerUsername } = data;
 
-    if (markerId !== socket.id) {
-        // Find and mark the cell that was marked by opponent
-        const cells = document.querySelectorAll('.bingo-cell');
-        for (let i = 0; i < cells.length; i++) {
-            if (parseInt(cells[i].innerText) === number) {
-                cells[i].classList.add('marked-by-opponent');
-                break;
+    // Tìm và đánh dấu ô bởi người chơi khác (dù là đối thủ hay người chơi khác trong phòng nhiều người)
+    const cells = document.querySelectorAll('.bingo-cell');
+    for (let i = 0; i < cells.length; i++) {
+        if (parseInt(cells[i].innerText) === number) {
+            // Phân biệt ô bạn đánh dấu và ô người khác đánh dấu (có thể giữ class 'marked-by-opponent')
+            if (markerId !== socket.id) {
+                 cells[i].classList.add('marked-by-opponent');
             }
+            break;
         }
+    }
 
-        // Now it's my turn
-        if (gameActive) {
+    // Cập nhật lượt chơi dựa trên nextPlayerId từ server (cho phòng nhiều người)
+    // Đối với phòng 2 người, logic cũ myTurn = true vẫn có thể dùng nếu không có nextPlayerId
+    if (gameActive) {
+        if (nextPlayerId) { // Nếu server gửi nextPlayerId (cho phòng nhiều người)
+            myTurn = (socket.id === nextPlayerId);
+            updateTurnDisplay(null, nextPlayerUsername);
+        } else if (markerId !== socket.id) { // Logic cũ cho phòng 2 người
             myTurn = true;
             updateTurnDisplay();
         }
-
-        // Check for win conditions
-        checkWin();
     }
+    checkWin();
 });
 
 socket.on('gameWon', (data) => {
@@ -205,31 +223,35 @@ socket.on('gameWon', (data) => {
     updateTurnDisplay('Trò chơi đã kết thúc');
 });
 
-socket.on('gameRestart', () => {
+socket.on('gameRestart', (data) => {
+    const { firstPlayerId, players, maxPlayersInRoom } = data; // Nhận thêm thông tin
     gameActive = true;
     playAgainBtn.style.display = 'none';
-    playAgainBtn.disabled = false; 
+    playAgainBtn.disabled = false;
 
-    // Ẩn bàn Bingo và hiện màn hình tung đồng xu
-    gameContainer.style.display = 'none';
-    coinTossDiv.style.display = 'block';
-    coinTossMessage.innerText = 'Chọn "Hình" hoặc "Chữ" để quyết định người đi trước.';
-    chooseHeadsButton.disabled = false;
-    chooseTailsButton.disabled = false;
-    coinChoiceMade = false;
+    if (maxPlayersInRoom === 2) {
+        gameContainer.style.display = 'none';
+        coinTossDiv.style.display = 'block';
+        coinTossMessage.innerText = 'Chọn "Hình" hoặc "Chữ" để quyết định người đi trước.';
+        chooseHeadsButton.disabled = false;
+        chooseTailsButton.disabled = false;
+        coinChoiceMade = false;
+    } else {
+        coinTossDiv.style.display = 'none'; // Ẩn tung đồng xu
+        gameContainer.style.display = 'block'; // Hiện luôn bàn cờ
+        myTurn = (socket.id === firstPlayerId); // Xác định lượt chơi
+        updateTurnDisplay(null, players.find(p => p.id === firstPlayerId)?.username);
+    }
 
-    // Generate new board numbers
+
     myBoardNumbers = generateBingoNumbers();
-    socket.emit('boardNumbers', { roomId: currentRoomId, numbers: myBoardNumbers, username });
+    // Server sẽ emit 'boardNumbers' từ client, không cần emit lại ở đây trừ khi logic thay đổi
+    // socket.emit('boardNumbers', { roomId: currentRoomId, numbers: myBoardNumbers, username });
 
-    // Determine turn (player 1 always goes first)
-    myTurn = playerNumber === 1;
-
-    // Initialize new board
     initializeBingoBoard();
-    updateTurnDisplay();
-
-    checkAndEnablePlayAgainButton(); 
+    // updateTurnDisplay(); // Gọi trong if/else ở trên
+    checkAndEnablePlayAgainButton();
+    winnerModal.style.display = 'none'; // Ẩn modal thắng nếu đang hiển thị
 });
 
 socket.on('playerLeft', (data) => {
@@ -248,6 +270,11 @@ socket.on('playerLeft', (data) => {
 
 socket.on('errorMessage', (msg) => {
     alert(msg);
+});
+
+socket.on('requestNewBoardNumbers', () => {
+    myBoardNumbers = generateBingoNumbers();
+    socket.emit('boardNumbers', { roomId: currentRoomId, numbers: myBoardNumbers, username });
 });
 
 function checkAndEnablePlayAgainButton() {
@@ -317,13 +344,26 @@ function shuffle(array) {
     return array;
 }
 
-function updateTurnDisplay(message) {
+socket.on('updateTurn', (data) => {
+    const { nextPlayerId, nextPlayerUsername } = data;
+    myTurn = (socket.id === nextPlayerId);
+    updateTurnDisplay(null, nextPlayerUsername); // Truyền tên người chơi tiếp theo
+});
+
+function updateTurnDisplay(message, currentPlayerUsername) {
     if (message) {
         turnDisplay.innerText = message;
         turnDisplay.className = '';
     } else if (gameActive) {
-        turnDisplay.innerText = myTurn ? 'Lượt của bạn' : `Lượt của đối thủ`;
-        turnDisplay.className = myTurn ? 'your-turn' : 'opponent-turn';
+        if (myTurn) {
+            turnDisplay.innerText = 'Lượt của bạn';
+            turnDisplay.className = 'your-turn';
+        } else {
+            // Hiển thị tên người chơi hiện tại nếu có
+            const opponentName = currentPlayerUsername || Object.values(opponents).join(', ') || 'Đối thủ';
+            turnDisplay.innerText = `Lượt của ${opponentName}`;
+            turnDisplay.className = 'opponent-turn';
+        }
     }
 }
 
@@ -331,68 +371,55 @@ function checkWin() {
     if (!gameActive) return;
 
     const cells = document.querySelectorAll('.bingo-cell');
-    const markedCells = Array.from(cells).map(cell =>
-        cell.classList.contains('marked') || cell.classList.contains('marked-by-opponent')
-    );
 
     let linesCompleted = 0;
+    let tempLinesCompleted = 0; // Temporary counter for checking the conditions
+
+    // Helper function to check a line (row, col, or diagonal)
+    const checkLine = (line) => {
+        let myCellsInLine = 0;
+        for (const index of line) {
+            if (cells[index].classList.contains('marked')) {
+                myCellsInLine++;
+            }
+        }
+        return myCellsInLine >= 3; // Returns true if at least 3 cells are marked by the player
+    };
 
     // Check rows
     for (let row = 0; row < 5; row++) {
-        let rowComplete = true;
-        for (let col = 0; col < 5; col++) {
-            const index = row * 5 + col;
-            if (!cells[index].classList.contains('marked') &&
-                !cells[index].classList.contains('marked-by-opponent')) {
-                rowComplete = false;
-                break;
-            }
+        const rowIndices = [row * 5, row * 5 + 1, row * 5 + 2, row * 5 + 3, row * 5 + 4];
+        if (rowIndices.every(index => cells[index].classList.contains('marked') || cells[index].classList.contains('marked-by-opponent')) && checkLine(rowIndices)) {
+            tempLinesCompleted++;
         }
-        if (rowComplete) linesCompleted++;
     }
 
     // Check columns
     for (let col = 0; col < 5; col++) {
-        let colComplete = true;
-        for (let row = 0; row < 5; row++) {
-            const index = row * 5 + col;
-            if (!cells[index].classList.contains('marked') &&
-                !cells[index].classList.contains('marked-by-opponent')) {
-                colComplete = false;
-                break;
-            }
+        const colIndices = [col, col + 5, col + 10, col + 15, col + 20];
+        if (colIndices.every(index => cells[index].classList.contains('marked') || cells[index].classList.contains('marked-by-opponent')) && checkLine(colIndices)) {
+            tempLinesCompleted++;
         }
-        if (colComplete) linesCompleted++;
     }
 
     // Check diagonal (top-left to bottom-right)
-    let diag1Complete = true;
-    for (let i = 0; i < 5; i++) {
-        const index = i * 5 + i;
-        if (!cells[index].classList.contains('marked') &&
-            !cells[index].classList.contains('marked-by-opponent')) {
-            diag1Complete = false;
-            break;
-        }
+    const diag1Indices = [0, 6, 12, 18, 24];
+    if (diag1Indices.every(index => cells[index].classList.contains('marked') || cells[index].classList.contains('marked-by-opponent')) && checkLine(diag1Indices)) {
+        tempLinesCompleted++;
     }
-    if (diag1Complete) linesCompleted++;
 
     // Check diagonal (top-right to bottom-left)
-    let diag2Complete = true;
-    for (let i = 0; i < 5; i++) {
-        const index = i * 5 + (4 - i);
-        if (!cells[index].classList.contains('marked') &&
-            !cells[index].classList.contains('marked-by-opponent')) {
-            diag2Complete = false;
-            break;
-        }
+    const diag2Indices = [4, 8, 12, 16, 20];
+    if (diag2Indices.every(index => cells[index].classList.contains('marked') || cells[index].classList.contains('marked-by-opponent')) && checkLine(diag2Indices)) {
+        tempLinesCompleted++;
     }
-    if (diag2Complete) linesCompleted++;
 
-    document.getElementById('lines-completed').innerText = `Đường hoàn thành: ${linesCompleted}/5`;
+    linesCompleted = tempLinesCompleted; // Update the actual counter
 
-    // Check if 5 lines are completed
-    if (linesCompleted >= 5) {
+    document.getElementById('lines-completed').innerText = `Đường hoàn thành: ${linesCompleted}/2`;
+
+    // Check if 2 lines are completed
+    if (linesCompleted >= 2) {
         if (myTurn) announceWin();
         return;
     }
@@ -462,15 +489,14 @@ socket.on('updateRooms', (rooms) => {
 
     Object.keys(rooms).forEach(roomId => {
         const room = rooms[roomId];
-        const isFull = room.players.length >= 2;
-
-        if (!isFull) { // Only show rooms that aren't full
+        // Chỉ hiển thị phòng chưa đầy
+        if (room.players.length < room.maxPlayers) {
             const roomItem = document.createElement('li');
             roomItem.classList.add('room-item');
             roomItem.innerHTML = `
-                <span class="room-code">${roomId}</span>
-                <span class="room-players">${room.players.length}/2 người chơi</span>
-                <button class="join-btn" data-room="${roomId}">Tham gia</button>
+                <span class="room-code"><span class="math-inline">\{roomId\}</span\>
+                <span class="room-players">{room.players.length}/room.maxPlayers người chơi</span>
+                <button class="join-btn" data-room="{roomId}">Tham gia</button>
             `;
             activeRoomsList.appendChild(roomItem);
 
@@ -478,8 +504,8 @@ socket.on('updateRooms', (rooms) => {
             const joinBtn = roomItem.querySelector('.join-btn');
             joinBtn.addEventListener('click', () => {
                 if (username) {
-                    roomInput.value = roomId;
-                    currentRoomId = roomId;
+                    roomInput.value = roomId; // Tự điền mã phòng
+                    // currentRoomId = roomId; // Không gán ở đây, để server xử lý
                     socket.emit('joinRoom', { roomId, username });
                 } else {
                     alert('Vui lòng nhập tên của bạn trước!');

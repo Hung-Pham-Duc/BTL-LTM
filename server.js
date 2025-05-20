@@ -1,8 +1,8 @@
-const express = require('express'); // Import thư viện express để tạo ứng dụng web
-const app = express();   // Khởi tạo một ứng dụng express
-const http = require('http').createServer(app); // Tạo một HTTP server từ ứng dụng express
-const io = require('socket.io')(http);  // Khởi tạo Socket.IO server và liên kết với HTTP server
-const path = require('path');  // Import thư viện path để làm việc với đường dẫn tệp và thư mục
+const express = require('express'); 
+const app = express();   
+const http = require('http').createServer(app); 
+const io = require('socket.io')(http); 
+const path = require('path');  
 
 //Cấu hình
 const PORT = process.env.PORT || 8000;
@@ -15,18 +15,18 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-//  Quản lý phòng 
-let rooms = {}; // { roomId: { players: [{id, username}], boardNumbers: {}, gameActive: false } }
+// Quản lý phòng
+let rooms = {}; // { roomId: { players: [{id, username}], boardNumbers: {}, gameActive: false, maxPlayers: 2, turnOrder: [], currentPlayerIndex: 0, creatorId: null } }
 let chatMessages = []; // Mảng lưu trữ tin nhắn chat
 let connectedUsers = 0; // Đếm số người dùng đang kết nối
 
 //  Quản lý tung đồng xu 
 let coinToss = {
     roomId: null, // ID của phòng đang thực hiện tung đồng xu
-    player1: null, // Socket ID của người chơi thứ 1
-    player2: null, // Socket ID của người chơi thứ 2
-    player1Choice: null, // Lựa chọn mặt đồng xu của người chơi thứ 1
-    player2Choice: null, // Lựa chọn mặt đồng xu của người chơi thứ 2
+    player1: null, 
+    player2: null, 
+    player1Choice: null, 
+    player2Choice: null, 
     result: null, // Kết quả của lần tung đồng xu 
     ready: false, // Thông báo cả hai người chơi đã chọn mặt đồng xu chưa
     firstChooser: null //Socket ID của người chơi chọn mặt đồng xu đầu tiên trong ván hiện tại
@@ -49,11 +49,12 @@ function resetCoinToss(roomId) {
 // Lấy thông tin các phòng đang có người chơi
 function getRoomsInfo() {
     const roomsInfo = {};
-    for (const [roomId, room] of Object.entries(rooms)) {  // Duyệt qua từng phòng trong 'rooms'
-        if (room.players.length > 0) { // Chỉ lấy phòng có 1 người chơi
+    for (const [roomId, room] of Object.entries(rooms)) {
+        if (room.players.length > 0) { // Chỉ lấy phòng có người chơi
             roomsInfo[roomId] = {
-                players: room.players,
-                gameActive: room.gameActive
+                players: room.players.map(p => ({ username: p.username })), // Chỉ gửi username
+                gameActive: room.gameActive,
+                maxPlayers: room.maxPlayers // Thêm maxPlayers
             };
         }
     }
@@ -62,52 +63,80 @@ function getRoomsInfo() {
 
 // Xử lý rời phòng
 function leaveRoom(socket, roomId) {
-    let shouldUpdateRooms = false;
+    const room = rooms[roomId];
+    if (!room) return false;
 
-    if (roomId && rooms[roomId]) {
-        // Get username before removing
-        const player = rooms[roomId].players.find(p => p.id === socket.id);
-        const username = player ? player.username : 'Người chơi';
+    const playerLeaving = room.players.find(p => p.id === socket.id);
+    const username = playerLeaving ? playerLeaving.username : 'Người chơi';
 
-        // Thông báo cho những người còn lại trong phòng
-        socket.to(roomId).emit('playerLeft', {
-            playerId: socket.id,
-            message: `${username} đã rời phòng.`
-        });
+    // Xóa người chơi khỏi phòng
+    room.players = room.players.filter(player => player.id !== socket.id);
+    delete room.boardNumbers[socket.id];
 
-        // Xóa người chơi khỏi phòng
-        if (rooms[roomId].players) {
-            rooms[roomId].players = rooms[roomId].players.filter(player => player.id !== socket.id);
-        }
+    socket.leave(roomId);
+    delete socket.roomId;
+    console.log(`👋 Player <span class="math-inline">\{username\} \(</span>{socket.id}) left room ${roomId}`);
 
-        // Xóa bảng số của người chơi
-        if (rooms[roomId].boardNumbers && rooms[roomId].boardNumbers[socket.id]) {
-            delete rooms[roomId].boardNumbers[socket.id];
-        }
+    io.emit('chatMessage', {
+        sender: 'Hệ thống',
+        message: `${username} đã rời khỏi phòng ${roomId}`,
+        type: 'system'
+    });
 
-        // Broadcast system message
-        io.emit('chatMessage', {
-            sender: 'Hệ thống',
-            message: `${username} đã rời khỏi phòng ${roomId}`,
-            type: 'system'
-        });
-
-        shouldUpdateRooms = true;
-
-        // Xóa phòng nếu không còn ai
-        if (rooms[roomId].players.length === 0) {
-            delete rooms[roomId];
-            console.log(`❌ Room ${roomId} deleted (no players remaining)`);
-        }
-
-        // Rời khỏi phòng Socket.IO
-        socket.leave(roomId);
-        delete socket.roomId;
-        
-        console.log(`👋 Player ${socket.id} left room ${roomId}`);
+    if (room.players.length === 0) {
+        delete rooms[roomId];
+        console.log(`❌ Room ${roomId} deleted (no players remaining)`);
+        io.emit('updateRooms', getRoomsInfo());
+        return true;
     }
 
-    return shouldUpdateRooms;
+    // Xử lý nếu game đang diễn ra
+    if (room.gameActive) {
+        // Nếu số người chơi còn lại ít hơn mức tối thiểu (ví dụ < 2), kết thúc game
+        if (room.players.length < 2) { // Hoặc < room.minPlayersForGame nếu bạn có logic đó
+            room.gameActive = false;
+            io.to(roomId).emit('gameEndedByPlayerLeft', { message: `Trò chơi kết thúc do ${username} rời phòng.` });
+            // Có thể xóa phòng hoặc cho phép người chơi còn lại thoát
+        } else {
+            // Cập nhật turnOrder và currentPlayerIndex
+            room.turnOrder = room.turnOrder.filter(playerId => playerId !== socket.id);
+            if (room.turnOrder.length > 0) {
+                // Nếu người rời đi là người đang có lượt, chuyển lượt
+                if (room.turnOrder[room.currentPlayerIndex % room.turnOrder.length] === undefined ||
+                    !room.players.find(p => p.id === room.turnOrder[room.currentPlayerIndex % room.turnOrder.length])) {
+                    room.currentPlayerIndex = room.currentPlayerIndex % room.turnOrder.length;
+                    // Đảm bảo currentPlayerIndex hợp lệ
+                     if (room.currentPlayerIndex >= room.turnOrder.length) {
+                        room.currentPlayerIndex = 0;
+                    }
+                }
+                const nextPlayerId = room.turnOrder[room.currentPlayerIndex];
+                const nextPlayer = room.players.find(p => p.id === nextPlayerId);
+                io.to(roomId).emit('playerLeftUpdateTurn', {
+                    playerId: socket.id,
+                    message: `${username} đã rời phòng.`,
+                    nextPlayerId: nextPlayerId,
+                    nextPlayerUsername: nextPlayer ? nextPlayer.username : '',
+                    remainingPlayers: room.players.map(p => ({id: p.id, username: p.username}))
+                });
+            } else { // Không còn ai trong turnOrder
+                 room.gameActive = false;
+                 io.to(roomId).emit('gameEndedByPlayerLeft', { message: `Trò chơi kết thúc do không còn đủ người chơi.` });
+            }
+        }
+    }
+
+    // Thông báo cho những người còn lại trong phòng
+    socket.to(roomId).emit('playerLeft', {
+        playerId: socket.id,
+        username: username, // Gửi username để client có thể hiển thị
+        message: `${username} đã rời phòng.`,
+        playersInRoom: room.players.length,
+        maxPlayers: room.maxPlayers
+    });
+
+    io.emit('updateRooms', getRoomsInfo());
+    return true;
 }
 
 // Kiểm tra và bắt đầu game nếu đủ điều kiện
@@ -115,21 +144,37 @@ function checkGameStart(roomId) {
     const room = rooms[roomId];
     if (!room) return;
 
-    // Nếu có 2 người chơi và đủ bảng số
-    if (room.players.length === 2 &&
-        Object.keys(room.boardNumbers).length === 2) {
+    // Nếu đủ người chơi và đủ bảng số
+    if (room.players.length === room.maxPlayers &&
+        Object.keys(room.boardNumbers).length === room.maxPlayers) {
 
-        // Bắt đầu game
         room.gameActive = true;
+        let firstPlayerId;
 
-        // Gửi thông tin bắt đầu game cho các người chơi
-        io.to(roomId).emit('startGame', {
-            roomId,
-            players: room.players
-        });
+        if (room.maxPlayers === 2) {
+            // Phòng 2 người: Bắt đầu tung đồng xu
+            resetCoinToss(roomId); // Đảm bảo reset trước khi bắt đầu mới
+            coinToss.roomId = roomId;
+            coinToss.player1 = room.players[0].id;
+            coinToss.player2 = room.players[1].id;
+            io.to(roomId).emit('startCoinToss'); // Báo client bắt đầu tung xu
+             // firstPlayerId sẽ được xác định sau khi tung đồng xu
+        } else {
+            // Phòng 3+ người: Người tạo đi trước, không tung đồng xu
+            room.turnOrder = room.players.map(p => p.id); // Tạo thứ tự lượt chơi ban đầu
+            room.currentPlayerIndex = room.turnOrder.findIndex(id => id === room.creatorId); // Người tạo đi trước
+            if (room.currentPlayerIndex === -1) room.currentPlayerIndex = 0; // Fallback nếu không tìm thấy người tạo
+            firstPlayerId = room.turnOrder[room.currentPlayerIndex];
 
-        console.log(`🚀 Game started in room ${roomId}`);
-        io.emit('updateRooms', getRoomsInfo()); // Update room list
+            io.to(roomId).emit('startGame', {
+                roomId,
+                players: room.players,
+                firstPlayerId: firstPlayerId,
+                maxPlayersInRoom: room.maxPlayers // Gửi thêm maxPlayers
+            });
+            console.log(`🚀 Game started in room ${roomId} with ${room.maxPlayers} players. First turn: ${firstPlayerId}`);
+        }
+        io.emit('updateRooms', getRoomsInfo());
     }
 }
 
@@ -164,86 +209,86 @@ io.on('connection', (socket) => {
     });
 
     // Tạo phòng
-    socket.on('createRoom', (username) => {
-        const roomId = Math.random().toString(36).substr(2, 6).toUpperCase(); // Tạo một ID phòng ngẫu nhiên
+    socket.on('createRoom', (data) => { // data giờ là object { username, maxPlayers }
+        const { username, maxPlayers } = data;
+        const roomId = Math.random().toString(36).substr(2, 6).toUpperCase();
         rooms[roomId] = {
             players: [{ id: socket.id, username }],
             boardNumbers: {},
-            gameActive: false
+            gameActive: false,
+            maxPlayers: parseInt(maxPlayers) || 2, // Mặc định là 2 nếu không có
+            turnOrder: [],
+            currentPlayerIndex: 0,
+            creatorId: socket.id // Lưu người tạo phòng
         };
-        
-        socket.join(roomId);
-        socket.roomId = roomId; // Lưu roomId vào socket để dễ truy cập
-        socket.emit('roomCreated', { roomId, username });
-        socket.emit('waitingForOpponent', roomId);
 
-        // Broadcast system message
+        socket.join(roomId);
+        socket.roomId = roomId;
+        socket.emit('roomCreated', { roomId, username, maxPlayers: rooms[roomId].maxPlayers }); // Gửi maxPlayers về client
+        socket.emit('waitingForOpponent', { roomId, currentPlayers: 1, maxPlayers: rooms[roomId].maxPlayers });
+
+
         io.emit('chatMessage', {
             sender: 'Hệ thống',
-            message: `${username} đã tạo phòng ${roomId}`,
+            message: `${username} đã tạo phòng <span class="math-inline">\{roomId\} \(</span>{rooms[roomId].maxPlayers} người chơi)`,
             type: 'system'
         });
 
-        // Update rooms list for all clients
         io.emit('updateRooms', getRoomsInfo());
-
-        console.log(`✅ Room ${roomId} created by ${username} (${socket.id})`);
+        console.log(`✅ Room ${roomId} created by <span class="math-inline">\{username\} \(</span>{socket.id}) for ${rooms[roomId].maxPlayers} players`);
     });
 
     // Tham gia phòng
     socket.on('joinRoom', (data) => {
         const { roomId, username } = data;
+        const room = rooms[roomId];
 
-        // Kiểm tra phòng tồn tại và còn chỗ
-        if (rooms[roomId]) {
-            if (rooms[roomId].players.length < 2) {
-                // Lấy thông tin người chơi đầu tiên
-                const firstPlayer = rooms[roomId].players[0];
+        if (room) {
+            if (room.players.length < room.maxPlayers) {
+                const isPlayerAlreadyInRoom = room.players.some(p => p.id === socket.id);
+                if (isPlayerAlreadyInRoom) {
+                    socket.emit('errorMessage', 'Bạn đã ở trong phòng này rồi.');
+                    return;
+                }
 
-                // Thêm người chơi mới vào phòng
-                rooms[roomId].players.push({ id: socket.id, username });
+                room.players.push({ id: socket.id, username });
                 socket.join(roomId);
                 socket.roomId = roomId;
 
-                // Thông báo cho người chơi đã tham gia phòng thành công
+                const opponentInfo = room.players.length > 1 ? room.players[0] : null; // Thông tin người chơi đầu tiên (nếu có)
+
                 socket.emit('joinedRoom', {
                     roomId,
-                    opponent: firstPlayer
+                    opponent: opponentInfo, // Có thể là null nếu là người thứ 2 tham gia vào phòng trống
+                    playersInRoom: room.players.length,
+                    maxPlayers: room.maxPlayers
                 });
 
-                // Thông báo cho người chơi đầu tiên biết có người tham gia
-                io.to(firstPlayer.id).emit('playerJoined', {
-                    player: { id: socket.id, username }
+                // Thông báo cho những người khác trong phòng
+                socket.to(roomId).emit('playerJoined', {
+                    player: { id: socket.id, username },
+                    playersInRoom: room.players.length,
+                    maxPlayers: room.maxPlayers
                 });
 
-                // Broadcast system message
                 io.emit('chatMessage', {
                     sender: 'Hệ thống',
                     message: `${username} đã tham gia phòng ${roomId}`,
                     type: 'system'
                 });
 
-                // Nếu có đủ 2 người chơi, bắt đầu tung đồng xu
-                if (rooms[roomId].players.length === 2) {
-                    resetCoinToss(roomId);
-                    coinToss.roomId = roomId;
-                    coinToss.player1 = rooms[roomId].players[0].id;
-                    coinToss.player2 = rooms[roomId].players[1].id;
-                    io.to(roomId).emit('startCoinToss'); // Báo cho script bắt đầu tung xu
+                if (room.players.length === room.maxPlayers) {
+                    checkGameStart(roomId); // Bắt đầu game nếu đủ người
                 } else {
-                    socket.emit('waitingForOpponent', roomId);
+                    socket.emit('waitingForOpponent', { roomId, currentPlayers: room.players.length, maxPlayers: room.maxPlayers });
+                    // Thông báo cho những người đã ở trong phòng
+                    socket.to(roomId).emit('updateWaitingInfo', { currentPlayers: room.players.length, maxPlayers: room.maxPlayers });
                 }
 
-                checkGameStart(roomId); // Check if game can start
-                // Update rooms list for all clients
                 io.emit('updateRooms', getRoomsInfo());
-
-                console.log(`👤 Player ${username} (${socket.id}) joined room ${roomId}`);
+                console.log(`👤 Player <span class="math-inline">\{username\} \(</span>{socket.id}) joined room ${roomId}`);
             } else {
-                // Chỉ gửi thông báo lỗi nếu phòng đã đủ (>= 2) người
-                if (rooms[roomId].players.length >= 2) {
-                    socket.emit('errorMessage', 'Phòng đã đủ người.');
-                }
+                socket.emit('errorMessage', 'Phòng đã đủ người.');
             }
         } else {
             socket.emit('errorMessage', 'Phòng không tồn tại.');
@@ -308,18 +353,32 @@ io.on('connection', (socket) => {
 
             // Kiểm tra xem cả hai người chơi đã chọn chưa
             if (coinToss.player1Choice && coinToss.player2Choice) {
-                // Xác định kết quả dựa trên lựa chọn
                 coinToss.result = Math.random() < 0.5 ? "chữ" : "hình";
-                let firstPlayerId = (coinToss.player1Choice === coinToss.result) ? coinToss.player1 : coinToss.player2;
+                let firstPlayerGameId = (coinToss.player1Choice === coinToss.result) ? coinToss.player1 : coinToss.player2;
 
+                // Gửi kết quả tung đồng xu
                 io.to(roomId).emit('coinTossResult', {
                     result: coinToss.result,
-                    firstPlayerId: firstPlayerId,
-                    player1Choice: coinToss.player1Choice, // Gửi lựa chọn của người chơi 1
-                    player2Choice: coinToss.player2Choice  // Gửi lựa chọn của người chơi 2
+                    firstPlayerId: firstPlayerGameId, // ID của người đi trước trong game
+                    player1Choice: coinToss.player1Choice,
+                    player2Choice: coinToss.player2Choice
                 });
 
-                resetCoinToss(roomId);
+                // Ngay sau khi có kết quả tung đồng xu, bắt đầu game cho phòng 2 người
+                const room = rooms[roomId];
+                if (room && room.maxPlayers === 2 && room.gameActive) { // Đảm bảo game đã active và là phòng 2 người
+                    room.turnOrder = [coinToss.player1, coinToss.player2]; // Đặt thứ tự lượt chơi
+                    room.currentPlayerIndex = room.turnOrder.findIndex(id => id === firstPlayerGameId);
+
+                    io.to(roomId).emit('startGame', { // Gửi sự kiện startGame sau khi có kết quả tung đồng xu
+                        roomId,
+                        players: room.players,
+                        firstPlayerId: firstPlayerGameId,
+                        maxPlayersInRoom: room.maxPlayers
+                    });
+                    console.log(`🚀 Game started in room ${roomId} (2 players) after coin toss. First turn: ${firstPlayerGameId}`);
+                }
+                resetCoinToss(roomId); // Reset sau khi sử dụng
             }
         }
     });
@@ -339,14 +398,30 @@ io.on('connection', (socket) => {
     // Đánh dấu số
     socket.on('markNumber', (data) => {
         const { roomId, number } = data;
-        if (rooms[roomId] && rooms[roomId].gameActive) {
-            // Gửi thông báo đến tất cả người chơi trong phòng về số được đánh dấu
+        const room = rooms[roomId];
+
+        if (room && room.gameActive) {
+            // Kiểm tra có phải lượt của người chơi này không
+            if (room.turnOrder[room.currentPlayerIndex] !== socket.id) {
+                // console.log(`Not your turn, ${socket.id}. Current turn: ${room.turnOrder[room.currentPlayerIndex]}`);
+                // Không cần gửi lỗi, client nên tự xử lý việc này
+                return;
+            }
+
+            // Chuyển lượt cho người tiếp theo
+            room.currentPlayerIndex = (room.currentPlayerIndex + 1) % room.turnOrder.length;
+            const nextPlayerId = room.turnOrder[room.currentPlayerIndex];
+            const nextPlayer = room.players.find(p => p.id === nextPlayerId);
+
+            // Gửi thông báo đến tất cả người chơi trong phòng về số được đánh dấu và lượt tiếp theo
             io.to(roomId).emit('numberMarked', {
                 number,
-                markerId: socket.id
+                markerId: socket.id,
+                nextPlayerId: nextPlayerId, // Gửi ID người chơi tiếp theo
+                nextPlayerUsername: nextPlayer ? nextPlayer.username : '' // Gửi username người chơi tiếp theo
             });
 
-            console.log(`🎯 Player ${socket.id} marked number ${number} in room ${roomId}`);
+            console.log(`🎯 Player ${socket.id} marked number ${number} in room ${roomId}. Next turn: ${nextPlayerId}`);
         }
     });
 
@@ -363,21 +438,44 @@ io.on('connection', (socket) => {
 
     // Xử lý chơi lại
     socket.on('playAgain', (roomId) => {
-        if (roomId && rooms[roomId]) {
-            // Reset thông tin game
-            rooms[roomId].boardNumbers = {};
-            rooms[roomId].gameActive = false;
+        const room = rooms[roomId];
+        if (room && room.players.length === room.maxPlayers) { // Chỉ cho chơi lại nếu đủ người
+            room.boardNumbers = {};
+            room.gameActive = true; // Sẵn sàng cho game mới
+            room.winner = null; // Reset người thắng
 
-            // Bắt đầu lại quá trình tung đồng xu
-            resetCoinToss(roomId);
-            coinToss.roomId = roomId;
-            coinToss.player1 = rooms[roomId].players[0].id;
-            coinToss.player2 = rooms[roomId].players[1].id;
-            io.to(roomId).emit('startCoinToss'); // Báo cho script bắt đầu tung xu
+            let firstPlayerId;
 
-            // Thông báo cho tất cả người chơi trong phòng
-            io.to(roomId).emit('gameRestart');
-            console.log(`🔄 Game restarted in room ${roomId}`);
+            if (room.maxPlayers === 2) {
+                resetCoinToss(roomId);
+                coinToss.roomId = roomId;
+                coinToss.player1 = room.players[0].id;
+                coinToss.player2 = room.players[1].id;
+                io.to(roomId).emit('startCoinToss'); // Bắt đầu lại tung xu cho phòng 2 người
+                // firstPlayerId sẽ được xác định sau
+            } else {
+                // Phòng 3+ người, người tạo phòng cũ vẫn đi trước hoặc theo một logic mới (ví dụ: người thắng ván trước)
+                // Giữ nguyên logic người tạo đi trước cho đơn giản
+                room.turnOrder = room.players.map(p => p.id);
+                room.currentPlayerIndex = room.turnOrder.findIndex(id => id === room.creatorId);
+                if (room.currentPlayerIndex === -1) room.currentPlayerIndex = 0;
+                firstPlayerId = room.turnOrder[room.currentPlayerIndex];
+
+                // Thông báo game restart và ai đi trước
+                io.to(roomId).emit('gameRestart', {
+                    firstPlayerId: firstPlayerId,
+                    players: room.players,
+                    maxPlayersInRoom: room.maxPlayers
+                });
+            }
+
+            // Yêu cầu client gửi lại boardNumbers
+            io.to(roomId).emit('requestNewBoardNumbers');
+
+
+            console.log(`🔄 Game restart initiated in room ${roomId}`);
+        } else if (room) {
+            io.to(socket.id).emit('errorMessage', 'Không đủ người chơi để bắt đầu lại.');
         }
     });
 
